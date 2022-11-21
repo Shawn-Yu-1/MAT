@@ -114,7 +114,7 @@ def psnr36k5_full(opts):
 @register_metric
 def fid50k_full(opts):
     opts.dataset_kwargs.update(max_size=None, xflip=False)
-    fid = frechet_inception_distance.compute_fid(opts, max_real=None, num_gen=50000)
+    fid = frechet_inception_distance.compute_fid(opts, max_real=None, num_gen=200)
     return dict(fid50k_full=fid)
 
 @register_metric
@@ -146,7 +146,7 @@ def is50k(opts):
 @register_metric
 def fid50k(opts):
     opts.dataset_kwargs.update(max_size=None)
-    fid = frechet_inception_distance.compute_fid(opts, max_real=50000, num_gen=50000)
+    fid = frechet_inception_distance.compute_fid(opts, max_real=50000, num_gen=200)
     return dict(fid50k=fid)
 
 @register_metric

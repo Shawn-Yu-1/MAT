@@ -18,11 +18,9 @@ import torch
 import dnnlib
 
 from training import training_loop
-# from training import training_loop_simmim as training_loop
-# from training import training_loop_woMap as training_loop
 from metrics import metric_main
-from torch_utils import training_stats
-from torch_utils import custom_ops
+from utils import training_stats
+
 
 #----------------------------------------------------------------------------
 
@@ -464,8 +462,8 @@ def subprocess_fn(rank, args, temp_dir):
     # Init torch_utils.
     sync_device = torch.device('cuda', rank) if args.num_gpus > 1 else None
     training_stats.init_multiprocessing(rank=rank, sync_device=sync_device)
-    if rank != 0:
-        custom_ops.verbosity = 'none'
+    # if rank != 0:
+    #     custom_ops.verbosity = 'none'
 
     # Execute training loop.
     training_loop.training_loop(rank=rank, **args)
@@ -487,17 +485,17 @@ class CommaSeparatedList(click.ParamType):
 @click.pass_context
 
 # General options.
-@click.option('--outdir', help='Where to save the results', required=True, metavar='DIR')
-@click.option('--gpus', help='Number of GPUs to use [default: 1]', type=int, metavar='INT')
+@click.option('--outdir', help='Where to save the results', required=True, metavar='DIR', default="./results")
+@click.option('--gpus', help='Number of GPUs to use [default: 1]', type=int, metavar='INT', default=1)
 @click.option('--snap', help='Snapshot interval [default: 50 ticks]', type=int, metavar='INT')
 @click.option('--metrics', help='Comma-separated list or "none" [default: fid50k_full]', type=CommaSeparatedList())
 @click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
 
 # Dataset.
-@click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True)
-@click.option('--data_val', help='Validation data (directory or zip)', metavar='PATH')
-@click.option('--dataloader', help='dataloader', type=str, metavar='STRING')
+@click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True, default="/data/dataset/places2/train")
+@click.option('--data_val', help='Validation data (directory or zip)', metavar='PATH', default="/data/dataset/places2/val")
+@click.option('--dataloader', help='dataloader', type=str, metavar='STRING', default="datasets.dataset_256.ImageFolderMaskDataset")
 @click.option('--cond', help='Train conditional model based on dataset labels [default: false]', type=bool, metavar='BOOL')
 @click.option('--subset', help='Train with only N images [default: all]', type=int, metavar='INT')
 @click.option('--mirror', help='Enable dataset x-flips [default: false]', type=bool, metavar='BOOL')
@@ -513,7 +511,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--pr', help='Override ratio of pcp loss', type=float)
 @click.option('--pl', help='Enable path length regularization [default: true]', type=bool, metavar='BOOL')
 @click.option('--kimg', help='Override training duration', type=int, metavar='INT')
-@click.option('--batch', help='Override batch size', type=int, metavar='INT')
+@click.option('--batch', help='Override batch size', type=int, metavar='INT', default=4)
 @click.option('--truncation', help='truncation for training', type=float)
 @click.option('--style_mix', help='style mixing probability for training', type=float)
 @click.option('--ema', help='Half-life of the exponential moving average (EMA) of generator weights', type=int, metavar='INT')
@@ -533,9 +531,9 @@ class CommaSeparatedList(click.ParamType):
 # Performance options.
 @click.option('--fp32', help='Disable mixed-precision training', type=bool, metavar='BOOL')
 @click.option('--nhwc', help='Use NHWC memory format with FP16', type=bool, metavar='BOOL')
-@click.option('--nobench', help='Disable cuDNN benchmarking', type=bool, metavar='BOOL')
+@click.option('--nobench', help='Disable cuDNN benchmarking', type=bool, metavar='BOOL', default=True)
 @click.option('--allow-tf32', help='Allow PyTorch to use TF32 internally', type=bool, metavar='BOOL')
-@click.option('--workers', help='Override number of DataLoader workers', type=int, metavar='INT')
+@click.option('--workers', help='Override number of DataLoader workers', type=int, metavar='INT', default=4)
 
 def main(ctx, outdir, dry_run, **config_kwargs):
     """Train a GAN using the techniques described in the paper

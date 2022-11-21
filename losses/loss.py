@@ -8,9 +8,9 @@
 
 import numpy as np
 import torch
-from torch_utils import training_stats
-from torch_utils import misc
-from torch_utils.ops import conv2d_gradfix
+from utils import training_stats, misc
+# from utils import misc
+from networks.ops import no_weight_gradients
 from losses.pcp import PerceptualLoss
 
 #----------------------------------------------------------------------------
@@ -151,7 +151,7 @@ class TwoStageLoss(Loss):
                 loss_Dr1 = 0
                 loss_Dr1_stg1 = 0
                 if do_Dr1:
-                    with torch.autograd.profiler.record_function('r1_grads'), conv2d_gradfix.no_weight_gradients():
+                    with torch.autograd.profiler.record_function('r1_grads'), no_weight_gradients():
                         r1_grads = torch.autograd.grad(outputs=[real_logits.sum()], inputs=[real_img_tmp], create_graph=True, only_inputs=True)[0]
                         r1_grads_stg1 = torch.autograd.grad(outputs=[real_logits_stg1.sum()], inputs=[real_img_tmp_stg1], create_graph=True, only_inputs=True)[0]
                     r1_penalty = r1_grads.square().sum([1,2,3])

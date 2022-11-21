@@ -9,11 +9,11 @@
 import numpy as np
 import scipy.signal
 import torch
-from torch_utils import persistence
-from torch_utils import misc
-from torch_utils.ops import upfirdn2d
-from torch_utils.ops import grid_sample_gradfix
-from torch_utils.ops import conv2d_gradfix
+import torch.nn.functional as F
+
+from utils import persistence
+from utils import misc
+from networks.ops import grid_sample, setup_filter, upsample2d, downsample2d
 
 #----------------------------------------------------------------------------
 # Coefficients of various wavelet decomposition low-pass filters.
@@ -164,7 +164,7 @@ class AugmentPipe(torch.nn.Module):
         self.cutout_size      = float(cutout_size)      # Size of the cutout rectangle, relative to image dimensions.
 
         # Setup orthogonal lowpass filter for geometric augmentations.
-        self.register_buffer('Hz_geom', upfirdn2d.setup_filter(wavelets['sym6']))
+        self.register_buffer('Hz_geom', setup_filter(wavelets['sym6']))
 
         # Construct filter bank for image-space filtering.
         Hz_lo = np.asarray(wavelets['sym2'])            # H(z)
@@ -287,7 +287,7 @@ class AugmentPipe(torch.nn.Module):
             G_inv = translate2d((mx0 - mx1) / 2, (my0 - my1) / 2) @ G_inv
 
             # Upsample.
-            images = upfirdn2d.upsample2d(x=images, f=self.Hz_geom, up=2)
+            images = upsample2d(x=images, f=self.Hz_geom, up=2)
             G_inv = scale2d(2, 2, device=device) @ G_inv @ scale2d_inv(2, 2, device=device)
             G_inv = translate2d(-0.5, -0.5, device=device) @ G_inv @ translate2d_inv(-0.5, -0.5, device=device)
 
@@ -295,10 +295,10 @@ class AugmentPipe(torch.nn.Module):
             shape = [batch_size, num_channels, (height + Hz_pad * 2) * 2, (width + Hz_pad * 2) * 2]
             G_inv = scale2d(2 / images.shape[3], 2 / images.shape[2], device=device) @ G_inv @ scale2d_inv(2 / shape[3], 2 / shape[2], device=device)
             grid = torch.nn.functional.affine_grid(theta=G_inv[:,:2,:], size=shape, align_corners=False)
-            images = grid_sample_gradfix.grid_sample(images, grid)
+            images = grid_sample(images, grid)
 
             # Downsample and crop.
-            images = upfirdn2d.downsample2d(x=images, f=self.Hz_geom, down=2, padding=-Hz_pad*2, flip_filter=True)
+            images = downsample2d(x=images, f=self.Hz_geom, down=2, padding=-Hz_pad*2, flip_filter=True)
 
         # --------------------------------------------
         # Select parameters for color transformations.
@@ -396,8 +396,8 @@ class AugmentPipe(torch.nn.Module):
             p = self.Hz_fbank.shape[1] // 2
             images = images.reshape([1, batch_size * num_channels, height, width])
             images = torch.nn.functional.pad(input=images, pad=[p,p,p,p], mode='reflect')
-            images = conv2d_gradfix.conv2d(input=images, weight=Hz_prime.unsqueeze(2), groups=batch_size*num_channels)
-            images = conv2d_gradfix.conv2d(input=images, weight=Hz_prime.unsqueeze(3), groups=batch_size*num_channels)
+            images = F.conv2d(input=images, weight=Hz_prime.unsqueeze(2), groups=batch_size*num_channels)
+            images = F.conv2d(input=images, weight=Hz_prime.unsqueeze(3), groups=batch_size*num_channels)
             images = images.reshape([batch_size, num_channels, height, width])
 
         # ------------------------

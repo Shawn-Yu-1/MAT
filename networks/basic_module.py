@@ -6,11 +6,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_utils import misc
-from torch_utils import persistence
-from torch_utils.ops import conv2d_resample
-from torch_utils.ops import upfirdn2d
-from torch_utils.ops import bias_act
+
+from utils import misc, persistence
+from .ops import bias_act, activation_funcs, setup_filter, upsample2d, conv2d_resample
+
 
 #----------------------------------------------------------------------------
 
@@ -33,6 +32,7 @@ class FullyConnectedLayer(nn.Module):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.randn([out_features, in_features]) / lr_multiplier)
         self.bias = torch.nn.Parameter(torch.full([out_features], np.float32(bias_init))) if bias else None
+        # self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
         self.activation = activation
 
         self.weight_gain = lr_multiplier / np.sqrt(in_features)
@@ -43,14 +43,16 @@ class FullyConnectedLayer(nn.Module):
         b = self.bias
         if b is not None and self.bias_gain != 1:
             b = b * self.bias_gain
-
-        if self.activation == 'linear' and b is not None:
+        # out = self.linear(x)
+        if self.activation == 'linear':
             # out = torch.addmm(b.unsqueeze(0), x, w.t())
             x = x.matmul(w.t())
             out = x + b.reshape([-1 if i == x.ndim-1 else 1 for i in range(x.ndim)])
+            # out = F.relu(out)
         else:
             x = x.matmul(w.t())
-            out = bias_act.bias_act(x, b, act=self.activation, dim=x.ndim-1)
+            out = bias_act(x, b, act=self.activation, dim=x.ndim-1)
+            # out = F.leaky_relu(out)
         return out
 
 #----------------------------------------------------------------------------
@@ -73,11 +75,11 @@ class Conv2dLayer(nn.Module):
         self.activation = activation
         self.up = up
         self.down = down
-        self.register_buffer('resample_filter', upfirdn2d.setup_filter(resample_filter))
+        self.register_buffer('resample_filter', setup_filter(resample_filter))
         self.conv_clamp = conv_clamp
         self.padding = kernel_size // 2
         self.weight_gain = 1 / np.sqrt(in_channels * (kernel_size ** 2))
-        self.act_gain = bias_act.activation_funcs[activation].def_gain
+        self.act_gain = activation_funcs[activation].def_gain
 
         weight = torch.randn([out_channels, in_channels, kernel_size, kernel_size])
         bias = torch.zeros([out_channels]) if bias else None
@@ -93,12 +95,12 @@ class Conv2dLayer(nn.Module):
 
     def forward(self, x, gain=1):
         w = self.weight * self.weight_gain
-        x = conv2d_resample.conv2d_resample(x=x, w=w, f=self.resample_filter, up=self.up, down=self.down,
+        x = conv2d_resample(x=x, w=w, f=self.resample_filter, up=self.up, down=self.down,
                                             padding=self.padding)
 
         act_gain = self.act_gain * gain
         act_clamp = self.conv_clamp * gain if self.conv_clamp is not None else None
-        out = bias_act.bias_act(x, self.bias, act=self.activation, gain=act_gain, clamp=act_clamp)
+        out = bias_act(x, self.bias, act=self.activation, gain=act_gain, clamp=act_clamp)
         return out
 
 #----------------------------------------------------------------------------
@@ -126,7 +128,7 @@ class ModulatedConv2d(nn.Module):
         self.padding = self.kernel_size // 2
         self.up = up
         self.down = down
-        self.register_buffer('resample_filter', upfirdn2d.setup_filter(resample_filter))
+        self.register_buffer('resample_filter', setup_filter(resample_filter))
         self.conv_clamp = conv_clamp
 
         self.affine = FullyConnectedLayer(style_dim, in_channels, bias_init=1)
@@ -142,7 +144,7 @@ class ModulatedConv2d(nn.Module):
 
         weight = weight.view(batch * self.out_channels, in_channels, self.kernel_size, self.kernel_size)
         x = x.view(1, batch * in_channels, height, width)
-        x = conv2d_resample.conv2d_resample(x=x, w=weight, f=self.resample_filter, up=self.up, down=self.down,
+        x = conv2d_resample(x=x, w=weight, f=self.resample_filter, up=self.up, down=self.down,
                                             padding=self.padding, groups=batch)
         out = x.view(batch, self.out_channels, *x.shape[2:])
 
@@ -184,7 +186,7 @@ class StyleConv(torch.nn.Module):
 
         self.bias = torch.nn.Parameter(torch.zeros([out_channels]))
         self.activation = activation
-        self.act_gain = bias_act.activation_funcs[activation].def_gain
+        self.act_gain = activation_funcs[activation].def_gain
         self.conv_clamp = conv_clamp
 
     def forward(self, x, style, noise_mode='random', gain=1):
@@ -203,7 +205,7 @@ class StyleConv(torch.nn.Module):
 
         act_gain = self.act_gain * gain
         act_clamp = self.conv_clamp * gain if self.conv_clamp is not None else None
-        out = bias_act.bias_act(x, self.bias, act=self.activation, gain=act_gain, clamp=act_clamp)
+        out = bias_act(x, self.bias, act=self.activation, gain=act_gain, clamp=act_clamp)
 
         return out
 
@@ -229,16 +231,16 @@ class ToRGB(torch.nn.Module):
                                     resample_filter=resample_filter,
                                     conv_clamp=conv_clamp)
         self.bias = torch.nn.Parameter(torch.zeros([out_channels]))
-        self.register_buffer('resample_filter', upfirdn2d.setup_filter(resample_filter))
+        self.register_buffer('resample_filter', setup_filter(resample_filter))
         self.conv_clamp = conv_clamp
 
     def forward(self, x, style, skip=None):
         x = self.conv(x, style)
-        out = bias_act.bias_act(x, self.bias, clamp=self.conv_clamp)
+        out = bias_act(x, self.bias, clamp=self.conv_clamp)
 
         if skip is not None:
             if skip.shape != out.shape:
-                skip = upfirdn2d.upsample2d(skip, self.resample_filter)
+                skip = upsample2d(skip, self.resample_filter)
             out = out + skip
 
         return out

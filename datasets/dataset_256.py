@@ -84,7 +84,7 @@ class Dataset(torch.utils.data.Dataset):
             pass
 
     def __len__(self):
-        return self._raw_idx.size
+        return len(self._raw_idx)
 
     def __getitem__(self, idx):
         image = self._load_raw_image(self._raw_idx[idx])
@@ -187,7 +187,7 @@ class ImageFolderMaskDataset(Dataset):
         if resolution is not None and (raw_shape[2] != resolution or raw_shape[3] != resolution):
             raise IOError('Image files do not match the specified resolution')
         super().__init__(name=name, raw_shape=raw_shape, **super_kwargs)
-
+        print(self.__len__())
     @staticmethod
     def _file_ext(fname):
         return os.path.splitext(fname)[1].lower()
@@ -200,7 +200,7 @@ class ImageFolderMaskDataset(Dataset):
 
     def _open_file(self, fname):
         if self._type == 'dir':
-            return open(os.path.join(self._path, fname), 'rb')
+            return PIL.Image.open(os.path.join(self._path, fname))
         if self._type == 'zip':
             return self._get_zipfile().open(fname, 'r')
         return None
@@ -217,11 +217,11 @@ class ImageFolderMaskDataset(Dataset):
 
     def _load_raw_image(self, raw_idx):
         fname = self._image_fnames[raw_idx]
-        with self._open_file(fname) as f:
-            if pyspng is not None and self._file_ext(fname) == '.png':
-                image = pyspng.load(f.read())
-            else:
-                image = np.array(PIL.Image.open(f))
+        # with self._open_file(fname) as f:
+        #     if pyspng is not None and self._file_ext(fname) == '.png':
+        #         image = pyspng.load(f.read())
+        #     else:
+        image = np.array(self._open_file(fname))
         if image.ndim == 2:
             image = image[:, :, np.newaxis] # HW => HWC
 

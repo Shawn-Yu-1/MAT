@@ -214,6 +214,8 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, rel_l
 
     # Main loop.
     item_subset = [(i * opts.num_gpus + opts.rank) % num_items for i in range((num_items - 1) // opts.num_gpus + 1)]
+    print(opts.num_gpus)
+    print(item_subset)
     # for images, _labels in torch.utils.data.DataLoader(dataset=dataset, sampler=item_subset, batch_size=batch_size, **data_loader_kwargs):
     # adaptation to inpainting
     for images, masks, _labels in torch.utils.data.DataLoader(dataset=dataset, sampler=item_subset, batch_size=batch_size,
@@ -237,7 +239,7 @@ def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, rel_l
 
 def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, rel_lo=0, rel_hi=1, batch_size=64, batch_gen=None, jit=False, data_loader_kwargs=None, **stats_kwargs):
     if data_loader_kwargs is None:
-        data_loader_kwargs = dict(pin_memory=True, num_workers=3, prefetch_factor=2)
+        data_loader_kwargs = dict(pin_memory=True, num_workers=0, prefetch_factor=2)
 
     if batch_gen is None:
         batch_gen = min(batch_size, 4)
@@ -246,6 +248,7 @@ def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, rel
     # Setup generator and load labels.
     G = copy.deepcopy(opts.G).eval().requires_grad_(False).to(opts.device)
     dataset = dnnlib.util.construct_class_by_name(**opts.dataset_kwargs)
+    print(f"dataset len:{len(dataset)} ")
 
     # Image generation func.
     def run_generator(img_in, mask_in, z, c):
@@ -267,7 +270,10 @@ def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, rel
     detector = get_feature_detector(url=detector_url, device=opts.device, num_gpus=opts.num_gpus, rank=opts.rank, verbose=progress.verbose)
 
     # Main loop.
+    
     item_subset = [(i * opts.num_gpus + opts.rank) % stats.max_items for i in range((stats.max_items - 1) // opts.num_gpus + 1)]
+    print(opts.num_gpus)
+    print(stats.max_items)
     for imgs_batch, masks_batch, labels_batch in torch.utils.data.DataLoader(dataset=dataset, sampler=item_subset,
                                                               batch_size=batch_size,
                                                               **data_loader_kwargs):
